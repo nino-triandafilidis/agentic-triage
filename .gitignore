@@ -1,0 +1,56 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editors
+.vscode/
+.idea/
+
+# Secrets / machine-local env (template: .env.example)
+.env
+.env.local
+
+# Local experiment notes (not tracked)
+experiment_plan.md
+docs/postmortem_*.md
+
+# Claude Code session data
+.claude/
+
+
+# Original papers — PDFs and any extracted text (large, not versioned)
+original_papers/
+
+# Generated benchmark artifacts
+third_part_code/medLLMbenchmark/MIMIC-IV-Ext-Triage-Specialty-Diagnosis-Decision-Support.csv
+third_part_code/medLLMbenchmark/MIMIC-IV-Ext-Dev.csv
+
+# Generated data splits (re-create with scripts/prepare_splits.py)
+data/splits/test.csv
+data/splits/dev.csv
+data/splits/val.csv
+data/splits/scratch.csv
+data/splits/dev_tune.csv
+data/splits/dev_holdout.csv
+
+# Static pipeline fixtures — versioned
+!data/corpus/
+
+# Retrieval cache and manifest — generated, machine-local
+data/cache/
+
+# Experiment prediction outputs (per-row CSVs, JSON sidecars, inspection logs)
+data/runs/
+
+# Analytics results — all generated outputs, not source
+analytics/results/
+
+# Experiment results dir: ignore everything except the append-only log
+experiments/results/*
+!experiments/results/experiment_log.csv
