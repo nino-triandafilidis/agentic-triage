@@ -13,6 +13,39 @@ Agentic RAG framework for clinical decision support, evaluated on ESI triage pre
 > | `hybrid` | FAISS + BM25 fused via Reciprocal Rank Fusion (RRF) | ~$0.00 (same as FAISS) |
 > | `bq` (legacy) | BigQuery VECTOR_SEARCH | ~$0.10/call — avoid |
 
+## New user setup
+
+All large artifacts (embeddings, FAISS index, SQLite articles database) are pre-built. **You do not need to re-run the export or build scripts.**
+
+**Step 1 — Point `FAISS_STORE_DIR` at the artifact directory.**
+
+Add this to your shell profile (`~/.zshrc` or `~/.bash_profile`), pointing to wherever you store the FAISS artifacts:
+
+```bash
+export FAISS_STORE_DIR="/path/to/your/faiss_store"
+```
+
+The directory should contain: `index.faiss`, `pmc_articles.db`, `pmc_ids.parquet`, and `manifest.json`.
+
+**Step 2 — Copy the artifacts to local disk (recommended).**
+
+The pipeline auto-copies files from `FAISS_STORE_DIR` to `~/medllm/faiss` on first run. If your source is on a network or cloud-mounted drive, copy them directly for faster access:
+
+```bash
+mkdir -p ~/medllm/faiss
+cp "$FAISS_STORE_DIR/index.faiss" "$FAISS_STORE_DIR/pmc_articles.db" "$FAISS_STORE_DIR/pmc_ids.parquet" "$FAISS_STORE_DIR/manifest.json" ~/medllm/faiss/
+```
+
+Once copied, the pipeline reads only from `~/medllm/faiss` and skips the source on all subsequent runs (checksum-validated on startup).
+
+**Step 3 — Verify:**
+
+```bash
+.venv/bin/python -m pytest tests/test_retrieval.py -v
+```
+
+**Building from scratch:** If you don't have pre-built artifacts, you can regenerate them from BigQuery using `scripts/export_faiss_data.py` → `scripts/build_faiss_index.py`. See [scripts/README.md](scripts/README.md) for details and costs.
+
 ## README index
 
 | Location | Contents |
