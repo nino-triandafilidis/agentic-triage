@@ -18,6 +18,8 @@ venv/
 
 # Local experiment notes (not tracked)
 experiment_plan.md
+experiment_results.md
+experiment_results_archive.md
 docs/postmortem_*.md
 
 # Claude Code session data
