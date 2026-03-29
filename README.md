@@ -1,4 +1,6 @@
-# MedLLM
+# Agentic Triage
+
+Agentic RAG framework for clinical decision support, evaluated on ESI triage prediction using PubMed Central (PMC) literature and MIMIC-IV emergency department data. Built on top of the [medLLMbenchmark](https://github.com/BIMSBbioinfo/medLLMbenchmark) evaluation tasks.
 
 RAG-augmented medical LLM evaluation pipeline for emergency department triage. Retrieves PubMed literature via local vector search and uses LLM reasoning to predict ESI (Emergency Severity Index) triage levels on [medLLMbenchmark](https://github.com/BIMSBbioinfo/medLLMbenchmark) cases from MIMIC-IV emergency department data.
 
@@ -317,8 +319,8 @@ All splits live under `data/splits/` with short, consistent names. They are giti
 ├── data/splits/test.csv         2 200  — held out for final paper reporting
 ├── data/splits/val.csv          2 000  — one-shot comparison between finished RAG variants
 └── data/splits/dev.csv         19 049  — free development pool (source minus val)
-        ├── data/splits/dev_tune.csv       150  — fixed tuning subset for experiment iterations
-        ├── data/splits/dev_holdout.csv  18 899  — remainder of dev after dev_tune
+        ├── data/splits/dev_tune.csv     1 000  — fixed tuning subset for experiment iterations
+        ├── data/splits/dev_holdout.csv  18 049  — remainder of dev after dev_tune
         └── data/splits/scratch.csv        100  — subset of dev; immediate scaffolding runs
 ```
 
