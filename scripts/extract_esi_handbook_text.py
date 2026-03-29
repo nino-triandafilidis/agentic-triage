@@ -29,21 +29,17 @@ _spec.loader.exec_module(_build_module)
 _extract_text_by_page = _build_module._extract_text_by_page
 _filter_pages = _build_module._filter_pages
 
-DEFAULT_PDF = Path(
-    "/Users/ninotriandafilidis/Library/CloudStorage/"
-    "GoogleDrive-ninot@stanford.edu/Shared drives/CS224n/Emergency_Severity_Index_Handbook.pdf"
-)
-DEFAULT_OUT = Path(
-    "/Users/ninotriandafilidis/Library/CloudStorage/"
-    "GoogleDrive-ninot@stanford.edu/Shared drives/CS224n/esi_handbook_text.txt"
-)
+_PROJECT = Path(__file__).resolve().parent.parent
+
+DEFAULT_PDF = None  # required arg — no machine-specific default
+DEFAULT_OUT = _PROJECT / "data" / "corpus" / "esi_handbook_text.txt"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Extract ESI Handbook PDF to plaintext for LLM context prefix"
     )
-    parser.add_argument("--pdf", type=Path, default=DEFAULT_PDF, help="Path to ESI Handbook PDF")
+    parser.add_argument("--pdf", type=Path, required=True, help="Path to ESI Handbook PDF")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="Output plaintext file path")
     args = parser.parse_args()
 

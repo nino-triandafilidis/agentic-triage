@@ -4,12 +4,16 @@ Not wired into the RAG pipeline — call load_esi_handbook_prefix() when buildin
 that should include the handbook as static context.
 """
 
+import os
 from pathlib import Path
 
-# Default path matches scripts/extract_esi_handbook_text.py --out default
+# Default: cleaned handbook text shipped in data/corpus/.
+# Override via ESI_HANDBOOK_PATH env var if using a different extraction.
 DEFAULT_HANDBOOK_PATH = Path(
-    "/Users/ninotriandafilidis/Library/CloudStorage/"
-    "GoogleDrive-ninot@stanford.edu/Shared drives/CS224n/esi_handbook_text.txt"
+    os.environ.get(
+        "ESI_HANDBOOK_PATH",
+        str(Path(__file__).resolve().parent.parent.parent / "data" / "corpus" / "esi_handbook_clean.txt"),
+    )
 )
 
 

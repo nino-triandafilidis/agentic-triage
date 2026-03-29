@@ -169,16 +169,9 @@ def _embed_chunks(chunks: list[dict], embed_fn) -> np.ndarray:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build FAISS index from ESI Handbook PDF")
-    default_pdf = Path(
-        "/Users/ninotriandafilidis/Library/CloudStorage/"
-        "GoogleDrive-ninot@stanford.edu/Shared drives/CS224n/Emergency_Severity_Index_Handbook.pdf"
-    )
-    default_out = Path(
-        "/Users/ninotriandafilidis/Library/CloudStorage/"
-        "GoogleDrive-ninot@stanford.edu/Shared drives/CS224n/esi_handbook_index"
-    )
-    parser.add_argument("--pdf", type=Path, default=default_pdf, help="Path to ESI Handbook PDF")
-    parser.add_argument("--out", type=Path, default=default_out, help="Output directory for index and metadata")
+    parser.add_argument("--pdf", type=Path, required=True, help="Path to ESI Handbook PDF")
+    parser.add_argument("--out", type=Path, default=Path("data/corpus/esi_handbook_index"),
+                        help="Output directory for index and metadata")
     args = parser.parse_args()
 
     if not args.pdf.exists():

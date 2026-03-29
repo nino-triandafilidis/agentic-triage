@@ -56,14 +56,12 @@ Exports BQ data for local FAISS search. Run once; outputs are cached.
 .venv/bin/python scripts/export_faiss_data.py
 ```
 
-**Outputs** (written to `FAISS_STORE_DIR`):
+**Outputs** (written to `FAISS_STORE_DIR`, defaults to `~/medllm/faiss/`):
 - `pmc_embeddings.npy` (~6.5 GB) — float32 vectors, shape (N, 768)
 - `pmc_ids.parquet` (~50 MB) — pmc_id + pmid per row (same order as embeddings)
-- `pmc_articles.db` (~17 GB in the current 8k shared-drive copy) — SQLite database with `articles` table (pmc_id, pmid, article_text, article_citation). `article_text` stores the first 8000 characters from the owned `pmc_articles` table (`SUBSTR(article_text, 1, 8000)` in `create_vector_store.py`), matching the default `config.RETRIEVAL_CONTEXT_CHARS`. The pipeline cleans retrieved text before prompt insertion, then truncates to the run's `context_chars`. Full article text is only available in the BQ source table. B-tree index on `pmc_id` for O(log N) lookups at ~0 MB steady-state RAM. Larger than the old parquet (~2-3 GB) because SQLite stores text uncompressed.
+- `pmc_articles.db` (~17 GB) — SQLite database with `articles` table (pmc_id, pmid, article_text, article_citation). `article_text` stores the first 8000 characters from the owned `pmc_articles` table (`SUBSTR(article_text, 1, 8000)` in `create_vector_store.py`), matching the default `config.RETRIEVAL_CONTEXT_CHARS`. The pipeline cleans retrieved text before prompt insertion, then truncates to the run's `context_chars`. Full article text is only available in the BQ source table. B-tree index on `pmc_id` for O(log N) lookups at ~0 MB steady-state RAM.
 
-**Local caching:** At runtime, `_ensure_local_copy()` copies `index.faiss` (6.3 GB) + `pmc_articles.db` (~17 GB in the current shared copy) + `pmc_ids.parquet` (29 MB) from the shared drive to `FAISS_LOCAL_DIR`. First-run copy time depends on network throughput; subsequent runs skip existing files (checksum-validated). Default `FAISS_LOCAL_DIR` is `~/medllm/faiss` (persists across reboots). Override with env var if needed.
-
-**TODO — compress `article_text` in SQLite:** The 8k db is substantially larger than the old parquet because SQLite stores text uncompressed. Gzip-compressing `article_text` on insert and decompressing on read would materially shrink the sidecar and reduce first-run copy time. CPU cost should be negligible for the small number of rows read per query. Tradeoff: article text becomes binary blobs, so ad-hoc `sqlite3` CLI queries won't show readable text.
+At runtime, `_ensure_local_copy()` verifies the required files exist in `FAISS_LOCAL_DIR` (defaults to `~/medllm/faiss/`). If `FAISS_STORE_DIR` differs from `FAISS_LOCAL_DIR`, files are copied automatically. Checksums are validated on startup.
 
 ## `build_faiss_index.py`
 
@@ -105,11 +103,11 @@ Recommends the lowest nprobe achieving ≥90% recall@10.
 Builds a **standalone** FAISS index from the AHRQ/ENA Emergency Severity Index (ESI) Handbook PDF. Use this to augment or compare with PMC retrieval for triage decision support.
 
 ```bash
-.venv/bin/python scripts/build_esi_handbook_index.py [--pdf PATH] [--out DIR]
+.venv/bin/python scripts/build_esi_handbook_index.py --pdf PATH [--out DIR]
 ```
 
-- **--pdf** — Path to the ESI Handbook PDF (default: shared CS224n drive path).
-- **--out** — Output directory for `index.faiss`, `chunks.json`, `manifest.json` (default: same drive `esi_handbook_index/`).
+- **--pdf** — Path to the ESI Handbook PDF (required).
+- **--out** — Output directory for `index.faiss`, `chunks.json`, `manifest.json` (default: `data/corpus/esi_handbook_index/`).
 
 **Steps:** (1) Parse PDF, drop cover/TOC/blank/acknowledgments and other non–decision-support pages. (2) Chunk retained text (~2000 chars, 400 char overlap). (3) Embed with Vertex AI `text-embedding-005` (same as main corpus). (4) Build FAISS `IndexFlatIP` and write index + chunk metadata.
 
@@ -120,11 +118,11 @@ Builds a **standalone** FAISS index from the AHRQ/ENA Emergency Severity Index (
 Extracts the ESI Handbook PDF into a single plaintext file for use as a system-level context prefix in LLM triage queries (no embedding or FAISS). Uses the same page-filtering logic as `build_esi_handbook_index.py`.
 
 ```bash
-.venv/bin/python scripts/extract_esi_handbook_text.py [--pdf PATH] [--out PATH]
+.venv/bin/python scripts/extract_esi_handbook_text.py --pdf PATH [--out PATH]
 ```
 
-- **--pdf** — Path to the ESI Handbook PDF (default: same as `build_esi_handbook_index.py`).
-- **--out** — Output plaintext file (default: `.../Shared drives/CS224n/esi_handbook_text.txt`).
+- **--pdf** — Path to the ESI Handbook PDF (required).
+- **--out** — Output plaintext file (default: `data/corpus/esi_handbook_text.txt`).
 
 **Output:** One plaintext file with page markers (`--- Page N ---`) between pages so the LLM can cite specific pages. After running, use `src.rag.esi_handbook.load_esi_handbook_prefix(path)` (or `load_esi_handbook_prefix()` for the default path) to load the text for injection into prompts. Not wired into the RAG pipeline — available for future use.
 

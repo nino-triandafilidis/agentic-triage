@@ -126,12 +126,12 @@ itself, not on page boundaries.
 ══════════════════════════════════════════════════════════════════════════════
 
 Usage:
-    .venv/bin/python scripts/clean_esi_handbook.py [INPUT] [OUTPUT_CLEAN] [OUTPUT_REFS]
+    .venv/bin/python scripts/clean_esi_handbook.py INPUT [OUTPUT_CLEAN] [OUTPUT_REFS]
 
-Defaults:
-    INPUT:        ~/Library/CloudStorage/.../CS224n/esi_handbook_text.txt
-    OUTPUT_CLEAN: same directory, esi_handbook_clean.txt
-    OUTPUT_REFS:  same directory, esi_handbook_references.txt
+Args:
+    INPUT:        Path to raw esi_handbook_text.txt (required)
+    OUTPUT_CLEAN: Cleaned output (default: data/corpus/esi_handbook_clean.txt)
+    OUTPUT_REFS:  References output (default: data/corpus/esi_handbook_references.txt)
 """
 
 import re
@@ -139,14 +139,9 @@ import sys
 from pathlib import Path
 
 # ── Default paths ────────────────────────────────────────────────────────────
-_GDRIVE = (
-    Path.home()
-    / "Library/CloudStorage/GoogleDrive-ninot@stanford.edu"
-    / "Shared drives/CS224n"
-)
 _PROJECT = Path(__file__).parent.parent  # repo root
 
-DEFAULT_INPUT       = str(_GDRIVE / "esi_handbook_text.txt")
+DEFAULT_INPUT       = None  # required arg — no machine-specific default
 DEFAULT_OUT_CLEAN   = str(_PROJECT / "data" / "corpus" / "esi_handbook_clean.txt")
 DEFAULT_OUT_REFS    = str(_PROJECT / "data" / "corpus" / "esi_handbook_references.txt")
 
@@ -278,7 +273,10 @@ def clean(input_path: str, out_clean: str, out_refs: str) -> None:
 
 
 if __name__ == "__main__":
-    inp      = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_INPUT
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/clean_esi_handbook.py INPUT [OUTPUT_CLEAN] [OUTPUT_REFS]")
+        sys.exit(1)
+    inp      = sys.argv[1]
     out_cln  = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_OUT_CLEAN
     out_refs = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_OUT_REFS
     clean(inp, out_cln, out_refs)
