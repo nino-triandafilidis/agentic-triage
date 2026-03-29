@@ -15,17 +15,11 @@ Score semantics vary by backend — do NOT compare scores across backends:
   bm25:     score = BM25 score (higher = more relevant)
   hybrid:   score = RRF score (higher = more relevant)
 
-Setup — first-time FAISS file download:
-  Files are downloaded from Google Drive via the Drive API (resumable, handles
-  large files reliably).  Requires a one-time auth that includes Drive scope:
-
-      gcloud auth application-default login \\
-          --scopes=openid,https://www.googleapis.com/auth/userinfo.email,\\
-    https://www.googleapis.com/auth/cloud-platform,\\
-    https://www.googleapis.com/auth/drive.readonly
-
-  If Drive auth is unavailable, falls back to FUSE mount copy, then suggests
-  BQ re-export as a last resort.
+Setup:
+  Build the FAISS artifacts locally before first use:
+    1. scripts/export_faiss_data.py   — export embeddings from BigQuery
+    2. scripts/build_faiss_index.py   — build IVF4096 index
+  Artifacts default to ~/medllm/faiss/; override via FAISS_LOCAL_DIR env var.
 """
 
 import hashlib
@@ -33,7 +27,6 @@ import json
 import logging
 import os
 import sqlite3
-import time
 from pathlib import Path
 
 import numpy as np
@@ -42,14 +35,6 @@ import pandas as pd
 import src.config as config
 from src.rag.text_cleaning import prepare_article_excerpt
 logger = logging.getLogger(__name__)
-
-# Google Drive file IDs for FAISS artefacts on the CS224n shared drive.
-# Retrieved via xattr com.google.drivefs.item-id#S on the FUSE-mounted files.
-GDRIVE_FILE_IDS = {
-    "index.faiss": "1iWIK_r9181huSoH32dtEzoGbKN4GcfY8",
-    "pmc_ids.parquet": "1oByUSKom4-GV7Yd9Ca7Dks2xH07xgcD4",
-    "pmc_articles.db": "1efqNE9Y4G5HqLhvOPo1ohAXAcuC5_GhD",
-}
 
 # ── Shared output columns ─────────────────────────────────────────────
 RESULT_COLS = [
@@ -79,111 +64,21 @@ def _verify_checksum(file_path: Path, expected_sha256: str) -> bool:
     return h.hexdigest() == expected_sha256
 
 
-def _download_from_gdrive(file_id: str, dest: Path) -> None:
-    """Download a file from Google Drive using the Drive API v3.
-
-    Uses resumable media download (100 MB chunks) so that large files
-    (17+ GB) transfer reliably without the ETIMEDOUT failures seen with
-    the CloudStorage FUSE mount.
-
-    Automatically retries on transient errors with exponential backoff.
-    Writes to a .tmp file and renames atomically on success.
-    """
-    from google.auth import default as auth_default
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaIoBaseDownload
-
-    SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-    creds, _ = auth_default(scopes=SCOPES)
-    creds.refresh(Request())
-
-    service = build("drive", "v3", credentials=creds)
-    request = service.files().get_media(fileId=file_id)
-
-    tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
-    tmp_dest.unlink(missing_ok=True)  # clean up any prior partial download
-
-    chunk_size = 100 * 1024 * 1024  # 100 MB chunks
-    max_retries = 20
-
-    with open(tmp_dest, "wb") as f:
-        downloader = MediaIoBaseDownload(f, request, chunksize=chunk_size)
-        done = False
-        retries = 0
-        while not done:
-            try:
-                status, done = downloader.next_chunk()
-                retries = 0  # reset on success
-                if status:
-                    pct = int(status.progress() * 100)
-                    mb = f.tell() >> 20
-                    logger.info("  %s: %d%% (%d MB)", dest.name, pct, mb)
-            except Exception as e:
-                retries += 1
-                if retries > max_retries:
-                    tmp_dest.unlink(missing_ok=True)
-                    raise RuntimeError(
-                        f"Google Drive download failed after {max_retries} retries: {e}"
-                    ) from e
-                wait = min(2 ** retries, 120)
-                logger.warning(
-                    "  Download error (retry %d/%d): %s — waiting %ds",
-                    retries, max_retries, e, wait,
-                )
-                time.sleep(wait)
-
-    os.rename(tmp_dest, dest)
-    logger.info("Downloaded %s (%d MB)", dest.name, dest.stat().st_size >> 20)
-
-
-def _copy_from_fuse(src_file: Path, dest: Path) -> None:
-    """Copy a file from the FUSE-mounted shared drive with chunked retry."""
-    tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
-    max_retries = 200
-    for attempt in range(1, max_retries + 1):
-        copied = tmp_dest.stat().st_size if tmp_dest.exists() else 0
-        try:
-            with open(src_file, "rb") as fsrc, open(tmp_dest, "ab") as fdst:
-                fsrc.seek(copied)
-                while True:
-                    buf = fsrc.read(1 << 22)  # 4 MB chunks
-                    if not buf:
-                        break
-                    fdst.write(buf)
-            break  # success
-        except (TimeoutError, OSError) as e:
-            if attempt == max_retries:
-                raise
-            wait = min(30 * attempt, 120)
-            logger.warning(
-                "FUSE copy interrupted at %d MB (attempt %d/%d): %s — waiting %ds",
-                copied >> 20, attempt, max_retries, e, wait,
-            )
-            time.sleep(wait)
-
-    os.rename(tmp_dest, dest)
-    logger.info("Copied %s (%d MB)", dest.name, dest.stat().st_size >> 20)
-
-
 def _ensure_local_copy() -> Path:
-    """Ensure FAISS artefacts are present locally, downloading if needed.
+    """Verify FAISS artefacts are present in the local directory.
 
-    Download strategy (tries in order):
-      1. Google Drive API — resumable 100 MB chunks, most reliable
-      2. FUSE mount copy — fast when it works, fails on large files
-      3. Error with instructions to re-export from BQ
+    Checks that manifest.json, index.faiss, pmc_ids.parquet, and
+    pmc_articles.db exist and pass checksum validation.
 
-    Each file is written to a .tmp suffix first, then os.rename()'d to the
-    final name (atomic on POSIX).  If any download is interrupted, no
-    corrupted partial files are left behind.
+    If FAISS_STORE_DIR differs from FAISS_LOCAL_DIR (e.g. artifacts were
+    built to a separate location), copies files to the local directory.
 
     Returns the local directory path.
     """
     store = Path(config.FAISS_STORE_DIR)
     local = Path(config.FAISS_LOCAL_DIR)
 
-    # Load manifest — try local copy first, then shared drive
+    # Load manifest — try local copy first, then store dir
     manifest = None
     for mpath in [local / "manifest.json", store / "manifest.json"]:
         if mpath.exists():
@@ -193,73 +88,48 @@ def _ensure_local_copy() -> Path:
 
     if manifest is None:
         raise FileNotFoundError(
-            f"manifest.json not found in {local} or {store}. "
-            "Run scripts/export_faiss_data.py and scripts/build_faiss_index.py first."
+            f"manifest.json not found in {local} or {store}.\n"
+            "Build the retrieval artifacts first:\n"
+            "  1. .venv/bin/python scripts/export_faiss_data.py\n"
+            "  2. .venv/bin/python scripts/build_faiss_index.py\n"
+            "See README.md Section 1 for full instructions."
         )
 
     local.mkdir(parents=True, exist_ok=True)
 
-    # Copy manifest locally if only on shared drive
+    # Copy manifest locally if only in store dir
     local_manifest = local / "manifest.json"
     if not local_manifest.exists():
         with open(local_manifest, "w") as f:
             json.dump(manifest, f, indent=2)
 
-    files_to_copy = ["index.faiss", "pmc_ids.parquet", "pmc_articles.db"]
-    for fname in files_to_copy:
+    required_files = ["index.faiss", "pmc_ids.parquet", "pmc_articles.db"]
+    for fname in required_files:
         dest = local / fname
         expected = manifest["checksums"].get(fname)
 
-        # Skip if already present and valid
+        # Already present and valid
         if dest.exists() and expected and _verify_checksum(dest, expected):
             logger.debug("Local copy OK: %s", fname)
             continue
 
-        logger.info("Need to download %s to %s", fname, local)
-
-        # --- Strategy 1: Google Drive API (resumable, reliable) ---
-        gdrive_id = GDRIVE_FILE_IDS.get(fname)
-        if gdrive_id:
-            try:
-                logger.info("Trying Google Drive API download for %s …", fname)
-                _download_from_gdrive(gdrive_id, dest)
-                if expected and not _verify_checksum(dest, expected):
-                    dest.unlink(missing_ok=True)
-                    raise RuntimeError(f"Checksum mismatch after Drive download of {fname}")
-                continue  # success — next file
-            except Exception as e:
-                logger.warning("Drive API download failed: %s", e)
-                dest.unlink(missing_ok=True)
-                dest.with_suffix(dest.suffix + ".tmp").unlink(missing_ok=True)
-
-        # --- Strategy 2: FUSE mount copy ---
+        # If store dir differs from local, try copying from store
         src_file = store / fname
-        if src_file.exists():
-            try:
-                logger.info("Trying FUSE mount copy for %s …", fname)
-                _copy_from_fuse(src_file, dest)
-                if expected and not _verify_checksum(dest, expected):
-                    dest.unlink(missing_ok=True)
-                    raise RuntimeError(f"Checksum mismatch after FUSE copy of {fname}")
-                continue  # success — next file
-            except Exception as e:
-                logger.warning("FUSE copy failed: %s", e)
+        if store != local and src_file.exists():
+            import shutil
+            logger.info("Copying %s from %s to %s …", fname, store, local)
+            shutil.copy2(src_file, dest)
+            if expected and not _verify_checksum(dest, expected):
                 dest.unlink(missing_ok=True)
-                dest.with_suffix(dest.suffix + ".tmp").unlink(missing_ok=True)
+                raise RuntimeError(f"Checksum mismatch after copying {fname}")
+            continue
 
-        # --- All strategies failed ---
-        raise RuntimeError(
-            f"Could not obtain {fname}. Options to fix:\n"
-            "  1. Set up Drive API auth (one-time):\n"
-            "       gcloud auth application-default login \\\n"
-            "         --scopes=openid,"
-            "https://www.googleapis.com/auth/userinfo.email,"
-            "https://www.googleapis.com/auth/cloud-platform,"
-            "https://www.googleapis.com/auth/drive.readonly\n"
-            "  2. Download manually from Google Drive web UI to:\n"
-            f"       {dest}\n"
-            "  3. Re-export from BigQuery (~$0.22):\n"
-            "       .venv/bin/python scripts/export_faiss_data.py"
+        raise FileNotFoundError(
+            f"{fname} not found in {local}.\n"
+            "Build the retrieval artifacts first:\n"
+            "  1. .venv/bin/python scripts/export_faiss_data.py\n"
+            "  2. .venv/bin/python scripts/build_faiss_index.py\n"
+            "See README.md Section 1 for full instructions."
         )
 
     return local

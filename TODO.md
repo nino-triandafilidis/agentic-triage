@@ -127,17 +127,6 @@ the indexing window size accounts for the sparse-vs-dense performance difference
 
 `query_strategy_sweep.py` computes metrics via `evaluate()` but does not call `log_result()` — the experiment log (`experiments/results/experiment_log.csv`) is only populated by running `eval_triage.py` as a separate manual step. Add automatic `log_result()` after each strategy's `evaluate()` call so every sweep run is logged without a separate eval invocation.
 
-## Make cloud storage paths portable
-
-`src/config.py` hardcodes a machine-specific Google Drive path as the default for
-`FAISS_STORE_DIR` (`/Users/ninotriandafilidis/Library/CloudStorage/...`). A collaborator
-cloning the repo gets a path that doesn't exist on their machine.
-
-- Replace the hardcoded default with a portable fallback (e.g. `~/medllm/faiss_store`),
-  matching the pattern already used by `FAISS_LOCAL_DIR` and `BM25_LOCAL_DIR`.
-- Add `FAISS_STORE_DIR`, `FAISS_LOCAL_DIR`, and `BM25_LOCAL_DIR` to `.env.example` so
-  collaborators know to set them.
-
 ## Faster model testing while preserving comparability
 
 Running 1,000-row experiments is slow at ~10s/row (~2.8 hrs per run). To speed up

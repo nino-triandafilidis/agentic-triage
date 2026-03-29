@@ -263,7 +263,7 @@ def parse_args():
     p.add_argument("--handbook-prefix", action="store_true",
                    help="Prepend full ESI Handbook text as system-level context")
     p.add_argument("--handbook-path", type=Path, default=None,
-                   help="Custom path to ESI handbook text file (default: shared drive)")
+                   help="Custom path to ESI handbook text file (default: data/corpus/esi_handbook_clean.txt)")
     p.add_argument("--prompt-template", type=str, default="default",
                    help="Prompt template to use (default: 'default'). "
                    f"Available: {sorted(PROMPT_TEMPLATES.keys())}")

@@ -104,8 +104,7 @@ RETRIEVAL_BACKEND = os.environ.get("RETRIEVAL_BACKEND", "faiss")
 # ── FAISS local retrieval paths ────────────────────────────────────────
 FAISS_STORE_DIR = os.environ.get(
     "FAISS_STORE_DIR",
-    "/Users/ninotriandafilidis/Library/CloudStorage/"
-    "GoogleDrive-ninot@stanford.edu/Shared drives/CS224n/faiss_store",
+    os.path.join(os.path.expanduser("~"), "medllm", "faiss"),
 )
 FAISS_LOCAL_DIR = os.environ.get(
     "FAISS_LOCAL_DIR",
