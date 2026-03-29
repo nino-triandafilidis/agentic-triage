@@ -17,6 +17,7 @@ venv/
 .env.local
 
 # Local experiment notes (not tracked)
+TODO.md
 experiment_plan.md
 experiment_results.md
 experiment_results_archive.md

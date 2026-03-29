@@ -91,16 +91,6 @@ headline score. The tiers, in priority order:
 
 See `docs/paper_notes.md § Evaluation metrics` for rationale and sources.
 
-### Current state
-
-- The framework (`src/rag/`, `src/llm/`) retrieves articles from a local FAISS index + SQLite
-  store (embeddings via text-embedding-005) and generates predictions via a provider-agnostic
-  LLM interface supporting Anthropic, Google, and open-source models.
-- Experiments to date have tested retrieval strategies (dense, sparse, hybrid, gated),
-  orchestration patterns (passive injection, tool-use, multi-role agents), prompt strategies
-  (few-shot, CoT, handbook injection), and model generalizability (Gemini 2.5/3 Flash, Pro,
-  Claude Haiku/Sonnet).
-
 ### Key Paths
 - `src/config.py`               — GCP credentials, BQ client, constants
 - `src/llm/`                    — Provider-agnostic LLM interface (Anthropic, Google, Kimi)
@@ -153,11 +143,6 @@ See `docs/paper_notes.md § Evaluation metrics` for rationale and sources.
 - Do not commit if there is an open TODO that directly conflicts with the changes.
 
 ### Writing experiment results
-- **Decision doc** (`experiment_results.md`): Update the leaderboard tables, key findings,
-  and open experiments sections after each evaluated run. Keep this file concise (~250 lines).
-- **Archive** (`experiment_results_archive.md`): Write the full per-experiment writeup here
-  (Hypothesis, Script command, Design, Results table, Interpretation, Output files).
-  Follow the style of existing sections (e.g. E02a, E05, W2B).
 - **CSV log** (`experiments/results/experiment_log.csv`): Machine-readable source of truth
   for all runs. Always append a row here.
 - After any experiment finishes running, always summarize the result for the user immediately.
@@ -165,6 +150,5 @@ See `docs/paper_notes.md § Evaluation metrics` for rationale and sources.
   grounded result, caveats, and next-step recommendation.
 
 ### GitHub / collaboration
-- Never assign GitHub issues or PRs to nevingeorge.
-- Design for reproducibility: a new collaborator should be able to clone and run with minimal
+- Design for reproducibility: a new contributor should be able to clone and run with minimal
   manual steps. Avoid machine-specific workarounds; fix the root cause.
