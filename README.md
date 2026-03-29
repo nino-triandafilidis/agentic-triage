@@ -1,4 +1,6 @@
-# MedLLM
+# Agentic Triage
+
+Agentic RAG framework for clinical decision support, evaluated on ESI triage prediction using PubMed Central (PMC) literature and MIMIC-IV emergency department data. Built on top of the [medLLMbenchmark](https://github.com/BIMSBbioinfo/medLLMbenchmark) evaluation tasks.
 
 > **Local retrieval — zero per-call cost (default backend)**
 >
@@ -13,32 +15,36 @@
 
 ## New user setup
 
-All large artifacts (embeddings, FAISS index, SQLite articles database) are already built and live on the shared Google Drive. **You do not need to re-run the export or build scripts.**
+All large artifacts (embeddings, FAISS index, SQLite articles database) are pre-built. **You do not need to re-run the export or build scripts.**
 
-**Step 1 — Point `FAISS_STORE_DIR` at the shared drive.**
+**Step 1 — Point `FAISS_STORE_DIR` at the artifact directory.**
 
-Add this to your shell profile (`~/.zshrc` or `~/.bash_profile`), replacing the path with wherever Google Drive mounts on your machine:
+Add this to your shell profile (`~/.zshrc` or `~/.bash_profile`), pointing to wherever you store the FAISS artifacts:
 
 ```bash
-export FAISS_STORE_DIR="/path/to/your/Shared drives/CS224n/faiss_store"
+export FAISS_STORE_DIR="/path/to/your/faiss_store"
 ```
 
-**Step 2 — Copy the artifacts to local disk (recommended, takes a few minutes).**
+The directory should contain: `index.faiss`, `pmc_articles.db`, `pmc_ids.parquet`, and `manifest.json`.
 
-The pipeline auto-copies files from the shared drive to `~/medllm/faiss` on first run, but reading through the Google Drive FUSE layer is slow (~12-15 min for 14.5 GB). Copy them directly now for a much faster transfer (local disk to local disk):
+**Step 2 — Copy the artifacts to local disk (recommended).**
+
+The pipeline auto-copies files from `FAISS_STORE_DIR` to `~/medllm/faiss` on first run. If your source is on a network or cloud-mounted drive, copy them directly for faster access:
 
 ```bash
 mkdir -p ~/medllm/faiss
 cp "$FAISS_STORE_DIR/index.faiss" "$FAISS_STORE_DIR/pmc_articles.db" "$FAISS_STORE_DIR/pmc_ids.parquet" "$FAISS_STORE_DIR/manifest.json" ~/medllm/faiss/
 ```
 
-Once copied, the pipeline reads only from `~/medllm/faiss` and skips the shared drive on all subsequent runs (checksum-validated on startup).
+Once copied, the pipeline reads only from `~/medllm/faiss` and skips the source on all subsequent runs (checksum-validated on startup).
 
 **Step 3 — Verify:**
 
 ```bash
 .venv/bin/python -m pytest tests/test_retrieval.py -v
 ```
+
+**Building from scratch:** If you don't have pre-built artifacts, you can regenerate them from BigQuery using `scripts/export_faiss_data.py` → `scripts/build_faiss_index.py`. See [scripts/README.md](scripts/README.md) for details and costs.
 
 ## README index
 
@@ -48,23 +54,25 @@ Once copied, the pipeline reads only from `~/medllm/faiss` and skips the shared 
 | [data/README.md](data/README.md) | Data splits, per-row prediction outputs, relationship to experiment logs |
 | [analytics/README.md](analytics/README.md) | PubMed content analytics findings (3-stage analysis) |
 | [experiments/README.md](experiments/README.md) | Triage evaluation metrics, experiment log format |
-| [scripts/README.md](scripts/README.md) | Script reference, FAISS/BM25 index building, validation results (Feb 2026) |
+| [scripts/README.md](scripts/README.md) | Script reference, FAISS/BM25 index building, validation results |
 | [third_part_code/README.md](third_part_code/README.md) | medLLMbenchmark preprocessing notes, `df` vs `df_small` analysis |
 
 ---
-
-RAG-augmented medical LLM evaluation pipeline. Uses BigQuery vector search over PubMed literature to ground LLM predictions on the subset of [medLLMbenchmark](https://github.com/BIMSBbioinfo/medLLMbenchmark) tasks (i.e., triage and diagnosis), using MIMIC-IV emergency department data.
 
 ## Repository structure
 
 ```
 src/
 ├── config.py              # GCP credentials, constants, one-time setup()
+├── schemas.py             # Pydantic data models for cases, predictions, run metadata
 ├── llm/                   # Provider-agnostic LLM interface (Anthropic, Google, Kimi)
 │   ├── base.py            # Abstract base class for LLM providers
 │   ├── registry.py        # Provider registry and factory
 │   ├── types.py           # Shared types (EmbedResponse, etc.)
 │   └── providers/         # Concrete provider implementations
+│       ├── anthropic.py   # Claude models
+│       ├── google.py      # Gemini / Vertex AI models
+│       └── kimi.py        # Moonshot / Kimi models
 └── rag/
     ├── retrieval.py        # PubMed retrieval — FAISS, BM25, hybrid RRF, or BQ
     ├── text_cleaning.py    # Text preprocessing for BM25 tokenization
@@ -72,18 +80,21 @@ src/
     ├── agentic_pipeline.py # Multi-step agentic RAG pipeline
     ├── generation.py       # LLM response generation with retrieved context
     ├── query_agents.py     # Query construction agents (rewrite, HPI-only, etc.)
+    ├── case_bank.py        # Few-shot example case bank
     ├── esi_handbook.py     # ESI Handbook text loader for system-level context
     └── pipeline.py         # End-to-end: query → retrieve → generate
 data/                      # See data/README.md
 ├── README.md
 ├── corpus/                # Static pipeline fixtures (git-tracked)
 │   ├── esi_v4_fewshot_bank.md     # 5 gold-standard ESI cases for few-shot prompts
-│   └── esi_v4_practice_cases.md   # ESI v4 practice cases reference
+│   ├── esi_v4_practice_cases.md   # ESI v4 practice cases reference
+│   ├── esi_handbook_clean.txt     # ESI Handbook plaintext
+│   └── esi_handbook_references.txt
 ├── splits/                # Input CSVs (gitignored) — regenerate with scripts/prepare_splits.py
 │   ├── test.csv           # 2 200-row — zero contact until paper submission
 │   ├── val.csv            # 2 000-row — evaluate finished systems, do not iterate
 │   ├── dev.csv            # 19 049-row free development pool
-│   ├── dev_tune.csv       # 150-row tuning subset of dev (experiment iterations)
+│   ├── dev_tune.csv       # 1 000-row tuning subset of dev (experiment iterations)
 │   ├── dev_holdout.csv    # Remainder of dev after dev_tune extraction
 │   └── scratch.csv        # 100-row subset of dev for quick scaffolding runs
 ├── runs/                  # Per-row prediction outputs and sidecar metadata (gitignored)
@@ -99,10 +110,14 @@ experiments/               # See experiments/README.md
 ├── query_strategy_sweep.py # Unified experiment runner (RAG + LLM-only)
 ├── eval_triage.py         # Computes metrics, appends summary to results/experiment_log.csv
 ├── tracking.py            # Experiment tracking utilities
-├── run_rag_triage.py      # Legacy single-strategy inference runner
+├── run_rag_triage.py      # Single-strategy inference runner
 ├── measure_retrieval_cost.py
-└── results/
-    └── experiment_log.csv # One row per experiment run (aggregate metrics)
+├── E04_snippet_cleaning.py
+├── E09_E12_retrieval_quality.py
+├── diff_runs.py
+├── results/
+│   └── experiment_log.csv # One row per experiment run (aggregate metrics)
+└── analysis/              # Per-experiment deep-dive analysis scripts
 scripts/                   # See scripts/README.md
 ├── README.md              # Script reference, FAISS validation results, BQ validation findings
 ├── prepare_splits.py      # Single entry point: copies + splits all benchmark data
@@ -112,12 +127,28 @@ scripts/                   # See scripts/README.md
 ├── validate_faiss_vs_bq.py # Recall@10 sweep across nprobe values (~$0.50)
 ├── build_esi_handbook_index.py  # Build FAISS index from ESI Handbook PDF
 ├── extract_esi_handbook_text.py # Extract ESI Handbook PDF to plaintext
+├── clean_esi_handbook.py
 ├── inspect_retrievals.py  # Inspect retrieval results for debugging
+├── merge_run_shards.py    # Merge parallel shard results
+├── health_check_run.py
 ├── create_vector_store.py # One-time BQ table provisioning (legacy)
 ├── validate_retrieval.py  # Post-provisioning integrity checks (legacy)
 └── populate_retrieval_cache.py  # Pre-compute retrieval cache (legacy)
 docs/
-└── paper_notes.md         # Permanent findings record linked to GitHub issues
+├── paper_agent.md
+├── paper_notes.md         # Permanent findings record linked to GitHub issues
+├── test_eval_runbook.md
+├── query_refinement_evidence.md
+└── final_test_results.md
+tests/
+├── conftest.py
+├── test_llm.py
+├── test_merge_shards.py
+├── test_pilot3_multi_role.py
+├── test_pricing.py
+├── test_retrieval.py
+├── test_wave2b_hardening.py
+└── test_wave2b_orchestration_search.py
 third_part_code/           # See third_part_code/README.md
 ├── README.md              # Preprocessing notes for medLLMbenchmark
 ├── pubmed-rag/            # Upstream: google/pubmed-rag (Git subtree)
@@ -173,8 +204,6 @@ This file holds API keys (Anthropic, Moonshot) and, if you need to re-run datase
 
 `.env.local` is loaded automatically via `python-dotenv` by both `src/config.py` and the dataset creation script — no manual sourcing needed.
 
-Most collaborators only need API keys. MIMIC paths are only required for the one-time dataset creation step (see `third_part_code/README.md`).
-
 ### 5. IAM roles
 
 Your account needs these roles on the project (grant once via [IAM console](https://console.cloud.google.com/iam-admin/iam) or CLI):
@@ -224,7 +253,18 @@ Two owned BQ tables exist for the `RETRIEVAL_BACKEND=bq` path:
 | `pubmed.pmc_embeddings` | Drives vector search. Has the IVF index. Contains embedding vectors + IDs.     | ~14 GB               |
 | `pubmed.pmc_articles`   | Document store. Fetched by ID after search. Contains text, citation, title.    | ~40–60 GB compressed |
 
-These were provisioned once (~$0.82) via `scripts/create_vector_store.py`. New users do not need to re-run this — the FAISS artifacts on the shared drive were exported from these tables. See [scripts/README.md](scripts/README.md) for full BQ validation findings.
+These were provisioned once (~$0.82) via `scripts/create_vector_store.py`. The FAISS artifacts were exported from these tables. See [scripts/README.md](scripts/README.md) for full BQ validation findings.
+
+## Evaluation methodology
+
+Evaluation uses a 4-tier metric stack:
+
+1. **Benchmark** — `exact_accuracy`, `range_accuracy`
+2. **Safety** — `under_triage_rate`, `over_triage_rate`
+3. **Imbalance diagnostics** — `macro_recall`, `per_class_recall`, `MA-MAE`
+4. **Chance-adjusted** — `AC2` (primary), `QWK` (collapse alarm)
+
+See [experiments/README.md](experiments/README.md) for full metric definitions and the experiment log format.
 
 ## Tests
 
@@ -252,10 +292,9 @@ INTEGRATION=1 .venv/bin/python -m pytest tests/ -v -m integration
 
 Skipped by default (`INTEGRATION` env var not set). These issue real VECTOR_SEARCH calls and validate that the owned tables are accessible and return non-empty results. Run once after provisioning or after any change to `retrieval.py` query structure.
 
-
 ## Dev / Val / Scratch Split Strategy
 
-The original paper acknowledges prompt experimentation in passing but provides no formal split. Our reproduction makes the split explicit and reproducible: any prompt engineering or hyperparameter decisions are traceable to dev-set observations and never touch the test set.
+The original paper acknowledges prompt experimentation in passing but provides no formal split. This project makes the split explicit and reproducible: any prompt engineering or hyperparameter decisions are traceable to dev-set observations and never touch the test set.
 
 ### Split structure
 
@@ -266,8 +305,8 @@ All splits live under `data/splits/` with short, consistent names. They are giti
 ├── data/splits/test.csv         2 200  — held out for final paper reporting
 ├── data/splits/val.csv          2 000  — one-shot comparison between finished RAG variants
 └── data/splits/dev.csv         19 049  — free development pool (source minus val)
-        ├── data/splits/dev_tune.csv       150  — fixed tuning subset for experiment iterations
-        ├── data/splits/dev_holdout.csv  18 899  — remainder of dev after dev_tune
+        ├── data/splits/dev_tune.csv     1 000  — fixed tuning subset for experiment iterations
+        ├── data/splits/dev_holdout.csv  18 049  — remainder of dev after dev_tune
         └── data/splits/scratch.csv        100  — subset of dev; immediate scaffolding runs
 ```
 
@@ -288,6 +327,4 @@ python scripts/prepare_splits.py          # copies test/dev, writes val and scra
 python scripts/prepare_splits.py --help   # show --val-size / --scratch-size / --seed options
 ```
 
-All four CSVs are gitignored. Re-run the script to regenerate them; the fixed seed guarantees identical output.
-
-
+All CSVs are gitignored. Re-run the script to regenerate them; the fixed seed guarantees identical output.
